@@ -94,20 +94,20 @@ void kernel_fallback(const float *A, const float *B, float *C, size_t m_block,
 
 int main() {
   static constexpr size_t N = 2048 / 1;  // 20T8/2
-  static constexpr size_t M = 2048 / 2;
-  static constexpr size_t K = 2048 / 2;
+  static constexpr size_t M = 2048 / 1;
+  static constexpr size_t K = 2048 / 1;
   // static std::array<float, N * N> A_v, B_v, C_v;
   std::vector<float> A_v(M * K), B_v(K * N), C_v(M * N);
   std::srand(0);  // Constant seed for reproducibility
   for (auto &x : A_v) {
-    x = std::rand() / static_cast<float>(RAND_MAX);
+    x = std::rand() / (static_cast<float>(RAND_MAX) * 0.3f);
   }
   for (auto &x : B_v) {
-    x = std::rand() / static_cast<float>(RAND_MAX);
+    x = std::rand() / (static_cast<float>(RAND_MAX) * 0.3f);
   }
 
-  int ind = std::rand() % N;  // Random index to check result later
-  std::println("Random index for verification: {}", ind);
+  int ind_m = std::rand() % M;
+  int ind_n = std::rand() % N;
   std::fill(C_v.begin(), C_v.end(), 0.0f);
 
   float *A = A_v.data();
@@ -117,7 +117,7 @@ int main() {
   // --- TEST 3: Kernel TxT ---
   auto start = std::chrono::high_resolution_clock::now();
 
-  // #pragma omp parallel for collapse(2) schedule(static)
+#pragma omp parallel for collapse(2) schedule(static)
   for (size_t i = 0; i < M; i += T) {
     for (size_t k = 0; k < K; k += T) {
       for (size_t j = 0; j < N; j += T) {
@@ -138,8 +138,8 @@ int main() {
   auto end = std::chrono::high_resolution_clock::now();
 
   auto time = std::chrono::duration<double>(end - start).count();
-  std::println("Kernel Time:   {}s | Result: {}", time, C[ind * N + ind]);
-  std::println("GFLOPS: {}", (2.0 * N * N * N) / time / 1e9);
+  std::println("Kernel Time: {}s | Result: {}", time, C[ind_m * N + ind_n]);
+  std::println("GFLOPS: {}", (2.0 * N * M * K) / time / 1e9);
 
   std::vector<float> D(M * N);
   start = std::chrono::high_resolution_clock::now();
@@ -157,7 +157,7 @@ int main() {
 
   for (int i = 0; i < M; ++i) {
     for (int j = 0; j < N; ++j) {
-      if (std::abs(D[i * N + j] - C[i * N + j]) >= 1e-4f) {
+      if (std::abs(D[i * N + j] - C[i * N + j]) >= 1e-5f) {
         std::println("Mismatch at ({}, {}): D = {}, C = {}", i, j, D[i * N + j],
                      C[i * N + j]);
         return 1;
@@ -166,8 +166,8 @@ int main() {
   }
 
   time = std::chrono::duration<double>(end - start).count();
-  std::println("Kernel Time:   {}s | Result: {}", time, D[ind * N + ind]);
-  std::println("GFLOPS: {}", (2.0 * N * N * N) / time / 1e9);
+  std::println("Kernel Time: {}s | Result: {}", time, C[ind_m * N + ind_n]);
+  std::println("GFLOPS: {}", (2.0 * N * M * K) / time / 1e9);
 
   return 0;
 }
