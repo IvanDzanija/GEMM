@@ -114,27 +114,66 @@ int main() {
   float *B = B_v.data();
   float *C = C_v.data();
 
+  // Macro-blocking size (Cache level - e.g., 64 or 128)
+  static constexpr size_t BLOCK_SIZE = 256;
+  // Microkernel tile size (Register level - e.g., 4)
+  static constexpr size_t T = 4;
+
   // --- TEST 3: Kernel TxT ---
   auto start = std::chrono::high_resolution_clock::now();
 
 #pragma omp parallel for collapse(2) schedule(static)
-  for (size_t i = 0; i < M; i += T) {
-    for (size_t k = 0; k < K; k += T) {
-      for (size_t j = 0; j < N; j += T) {
-        size_t current_M = std::min(T, M - i);
-        size_t current_N = std::min(T, N - j);
-        size_t current_K = std::min(T, K - k);
+  for (size_t ii = 0; ii < M; ii += BLOCK_SIZE) {
+    for (size_t jj = 0; jj < N; jj += BLOCK_SIZE) {
+      for (size_t kk = 0; kk < K; kk += BLOCK_SIZE) {
+        // 1. Define bounds for the current macro-block (Cache Level)
+        const size_t i_end = std::min(ii + BLOCK_SIZE, M);
+        const size_t j_end = std::min(jj + BLOCK_SIZE, N);
+        const size_t k_end = std::min(kk + BLOCK_SIZE, K);
 
-        if (current_M == T && current_N == T && current_K == T) {
-          // Pass K for A's stride, N for B and C's stride
-          kernel4x4(&A[i * K + k], &B[k * N + j], &C[i * N + j], K, N);
-        } else {
-          kernel_fallback(&A[i * K + k], &B[k * N + j], &C[i * N + j], current_M,
-                          current_N, current_K, K, N);
+        // 2. Micro-loops inside the macro-block (Register Level)
+        for (size_t i = ii; i < i_end; i += T) {
+          for (size_t k = kk; k < k_end; k += T) {
+            for (size_t j = jj; j < j_end; j += T) {
+              // Calculate sizes for the current micro-tile
+              size_t current_M = std::min(T, i_end - i);
+              size_t current_N = std::min(T, j_end - j);
+              size_t current_K = std::min(T, k_end - k);
+
+              // 3. Microkernel Dispatch Logic
+              if (current_M == T && current_N == T && current_K == T) {
+                // Pass K for A's stride, N for B and C's stride
+                kernel4x4(&A[i * K + k], &B[k * N + j], &C[i * N + j], K, N);
+              } else {
+                // Handle fringe/edge cases where micro-tile dimensions are incomplete
+                kernel_fallback(&A[i * K + k], &B[k * N + j], &C[i * N + j], current_M,
+                                current_N, current_K, K, N);
+              }
+            }
+          }
         }
       }
     }
   }
+
+  // #pragma omp parallel for collapse(2) schedule(static)
+  //   for (size_t i = 0; i < M; i += T) {
+  //     for (size_t k = 0; k < K; k += T) {
+  //       for (size_t j = 0; j < N; j += T) {
+  //         size_t current_M = std::min(T, M - i);
+  //         size_t current_N = std::min(T, N - j);
+  //         size_t current_K = std::min(T, K - k);
+  //
+  //         if (current_M == T && current_N == T && current_K == T) {
+  //           // Pass K for A's stride, N for B and C's stride
+  //           kernel4x4(&A[i * K + k], &B[k * N + j], &C[i * N + j], K, N);
+  //         } else {
+  //           kernel_fallback(&A[i * K + k], &B[k * N + j], &C[i * N + j], current_M,
+  //                           current_N, current_K, K, N);
+  //         }
+  //       }
+  //     }
+  //   }
   auto end = std::chrono::high_resolution_clock::now();
 
   auto time = std::chrono::duration<double>(end - start).count();

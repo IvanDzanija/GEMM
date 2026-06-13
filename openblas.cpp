@@ -9,7 +9,7 @@ extern "C" int openblas_get_num_threads();
 extern "C" int openblas_get_num_procs();
 extern "C" char *openblas_get_config();
 int main() {
-  constexpr int N = 1024 * 1;
+  constexpr int N = 1024 * 8;
   std::vector<float> A(N * N, 1.1f), B(N * N, 2.2f), C(N * N, 0.0f);
 
   // Inside main...
